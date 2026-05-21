@@ -6,11 +6,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"go.uber.org/zap"
-
-	eidoloncontext "github.com/eidolon/eidolon/internal/context"
+	eidolongrpc "github.com/eidolon/eidolon/internal/api/grpc"
 	"github.com/eidolon/eidolon/internal/config"
+	eidoloncontext "github.com/eidolon/eidolon/internal/context"
+	"github.com/eidolon/eidolon/internal/inference"
 	eidolonkafka "github.com/eidolon/eidolon/internal/kafka"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -34,31 +35,37 @@ func main() {
 	}
 	defer producer.Close()
 
-	builder := eidoloncontext.NewBuilder(producer, logger)
-
-	consumer, err := eidolonkafka.NewConsumer(
-		cfg.Kafka.BootstrapServers,
-		"eidolon-context-builder",
-		[]string{"eidolon.keystrokes"},
-		logger,
-	)
-	if err != nil {
-		logger.Fatal("failed to create kafka consumer", zap.Error(err))
-	}
-	defer consumer.Close()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	builder := eidoloncontext.NewBuilder(producer, logger)
+	keystrokeConsumer, err := eidolonkafka.NewConsumer(cfg.Kafka.BootstrapServers, "eidolon-context-builder", []string{"eidolon.keystrokes"}, logger)
+	if err != nil {
+		logger.Fatal("failed to create keystroke consumer", zap.Error(err))
+	}
+	defer keystrokeConsumer.Close()
+
 	go func() {
-		logger.Info("context builder started, consuming eidolon.keystrokes")
-		consumer.Poll(ctx, builder.Handle)
+		logger.Info("context builder started")
+		keystrokeConsumer.Poll(ctx, builder.Handle)
+	}()
+
+	inferClient := inference.NewClient()
+	gateway := eidolongrpc.NewGateway(inferClient, producer, logger)
+	contextConsumer, err := eidolonkafka.NewConsumer(cfg.Kafka.BootstrapServers, "eidolon-infer-gateway", []string{"eidolon.context.requests"}, logger)
+	if err != nil {
+		logger.Fatal("failed to create context consumer", zap.Error(err))
+	}
+	defer contextConsumer.Close()
+
+	go func() {
+		logger.Info("inference gateway started")
+		contextConsumer.Poll(ctx, gateway.Handle)
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
-
 	logger.Info("Eidolon shutting down", zap.String("signal", sig.String()))
 	cancel()
 }
