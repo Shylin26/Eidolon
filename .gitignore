@@ -1,0 +1,31 @@
+# Model weights — never commit these
+models/
+
+# Go build artifacts
+*.exe
+*.test
+*.out
+/bin/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+
+# macOS
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# SQLite
+*.db
+
+# Kafka data
+docker/kafka-data/
+
+# MLX adapters (large files)
+adapters/
