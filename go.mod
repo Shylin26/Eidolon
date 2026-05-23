@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.14.1
+	github.com/gorilla/mux v1.8.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.28.0

@@ -5,13 +5,16 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"go.uber.org/zap"
 
 	eidolongrpc "github.com/eidolon/eidolon/internal/api/grpc"
+	"github.com/eidolon/eidolon/internal/api/rest"
 	"github.com/eidolon/eidolon/internal/config"
 	eidoloncontext "github.com/eidolon/eidolon/internal/context"
 	"github.com/eidolon/eidolon/internal/inference"
 	eidolonkafka "github.com/eidolon/eidolon/internal/kafka"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -63,9 +66,20 @@ func main() {
 		contextConsumer.Poll(ctx, gateway.Handle)
 	}()
 
+	restServer := rest.NewServer(producer, logger, cfg.Server.HTTPPort)
+	go func() {
+		if err := restServer.Start(); err != nil {
+			logger.Info("REST server stopped", zap.Error(err))
+		}
+	}()
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
 	logger.Info("Eidolon shutting down", zap.String("signal", sig.String()))
 	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	restServer.Shutdown(shutdownCtx)
 }
