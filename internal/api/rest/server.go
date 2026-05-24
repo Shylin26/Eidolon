@@ -3,28 +3,36 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/eidolon/eidolon/internal/storage/sqlite"
 	"go.uber.org/zap"
 
 	"github.com/eidolon/eidolon/internal/kafka"
 )
 
 type Server struct {
-	producer *kafka.Producer
-	logger   *zap.Logger
-	router   *mux.Router
-	srv      *http.Server
+	producer    *kafka.Producer
+	sqliteStore *sqlite.Store
+	logger      *zap.Logger
+	router      *mux.Router
+	srv         *http.Server
 }
 
 func NewServer(producer *kafka.Producer, logger *zap.Logger, port int) *Server {
+	homeDir, _ := os.UserHomeDir()
+	dbPath := homeDir + "/eidolon/data/eidolon.db"
+	sqlStore, _ := sqlite.NewStore(dbPath)
+
 	s := &Server{
-		producer: producer,
-		logger:   logger,
-		router:   mux.NewRouter(),
+		producer:    producer,
+		sqliteStore: sqlStore,
+		logger:      logger,
+		router:      mux.NewRouter(),
 	}
 	s.srv = &http.Server{
 		Addr:        fmt.Sprintf(":%d", port),
@@ -43,6 +51,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/api/status", s.handleStatus).Methods("GET")
 	s.router.HandleFunc("/api/completions/stream", s.handleCompletionStream).Methods("GET")
 	s.router.HandleFunc("/api/keystroke", s.handleKeystroke).Methods("POST", "OPTIONS")
+	s.router.HandleFunc("/api/feedback", s.handleFeedback).Methods("POST", "OPTIONS")
 }
 
 func (s *Server) Start() error {
@@ -119,6 +128,31 @@ func (s *Server) handleKeystroke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
+}
+
+func (s *Server) handleFeedback(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	var body struct {
+		RequestID string `json:"request_id"`
+		Action    string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if body.RequestID == "" || (body.Action != "accept" && body.Action != "reject") {
+		http.Error(w, "invalid request_id or action", http.StatusBadRequest)
+		return
+	}
+	if s.sqliteStore != nil {
+		if err := s.sqliteStore.RecordFeedback(r.Context(), body.RequestID, body.Action); err != nil {
+			s.logger.Warn("feedback record failed", zap.Error(err))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

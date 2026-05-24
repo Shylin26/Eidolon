@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/eidolon/eidolon/internal/embedding"
+	"github.com/eidolon/eidolon/internal/storage/sqlite"
 	"github.com/eidolon/eidolon/internal/inference"
 	"github.com/eidolon/eidolon/internal/kafka"
 	"github.com/eidolon/eidolon/internal/storage/vector"
@@ -38,6 +40,7 @@ type Gateway struct {
 	inferClient  *inference.Client
 	embedClient  *embedding.Client
 	vectorStore  *vector.Store
+	sqliteStore  *sqlite.Store
 	producer     *kafka.Producer
 	logger       *zap.Logger
 }
@@ -52,10 +55,22 @@ func NewGateway(inferClient *inference.Client, producer *kafka.Producer, logger 
 		store = nil
 	}
 
+	homeDir, _ := os.UserHomeDir()
+	dbPath := homeDir + "/eidolon/data/eidolon.db"
+	logger.Info("opening sqlite", zap.String("path", dbPath))
+	sqlStore, err2 := sqlite.NewStore(dbPath)
+	if err2 != nil {
+		logger.Error("sqlite unavailable", zap.Error(err2))
+		sqlStore = nil
+	} else {
+		logger.Info("sqlite ready")
+	}
+
 	return &Gateway{
 		inferClient: inferClient,
 		embedClient: embedClient,
 		vectorStore: store,
+		sqliteStore: sqlStore,
 		producer:    producer,
 		logger:      logger,
 	}
@@ -119,6 +134,24 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 		zap.String("request_id", payload.RequestID),
 		zap.Int("tokens", tokenCount),
 	)
+
+	// persist to sqlite
+	if g.sqliteStore != nil {
+		err := g.sqliteStore.SaveCompletion(context.Background(), sqlite.Completion{
+			RequestID:       payload.RequestID,
+			FilePath:        payload.FilePath,
+			LanguageID:      payload.LanguageID,
+			TokensGenerated: tokenCount,
+		})
+		if err != nil {
+			g.logger.Error("sqlite save failed", zap.Error(err))
+		} else {
+			g.logger.Info("completion saved to sqlite", zap.String("request_id", payload.RequestID))
+		}
+	} else {
+		g.logger.Warn("sqliteStore is nil, skipping save")
+	}
+
 	return nil
 }
 
