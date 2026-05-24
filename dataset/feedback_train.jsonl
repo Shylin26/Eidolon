@@ -1,0 +1,1 @@
+{"text": "<PRE> <SUF> <MID>n * n\n}\n\nfunc main() {\n\tfmt.Println(square(10))\n}\n```\n\n### \u51fd\u6570\u53c2\u6570\n\n\u51fd\u6570\u53c2\u6570\u53ef\u4ee5\u662f\u4efb\u610f\u7c7b\u578b\uff0c\u5305\u62ec\u51fd\u6570\u3002\n\n```go\npackage main"}

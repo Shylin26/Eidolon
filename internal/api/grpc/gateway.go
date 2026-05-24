@@ -127,7 +127,11 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 		}
 		fullText += tok.Token
 		tokenCount++
+		if tokenCount == 1 {
+			g.logger.Info("first token received", zap.String("request_id", payload.RequestID), zap.String("token", tok.Token))
+		}
 		if tok.Done {
+			g.logger.Info("all tokens received", zap.String("request_id", payload.RequestID), zap.Int("count", tokenCount), zap.Int("text_len", len(fullText)))
 			break
 		}
 	}
