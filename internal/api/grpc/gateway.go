@@ -108,6 +108,7 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 	}
 
 	tokenCount := 0
+	fullText := ""
 	for tok := range tokens {
 		event := CompletionEvent{
 			RequestID: payload.RequestID,
@@ -124,6 +125,7 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 		if err := g.producer.Publish("eidolon.completions", payload.RequestID, data); err != nil {
 			g.logger.Error("failed to publish token", zap.Error(err))
 		}
+		fullText += tok.Token
 		tokenCount++
 		if tok.Done {
 			break
@@ -141,6 +143,7 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 			RequestID:       payload.RequestID,
 			FilePath:        payload.FilePath,
 			LanguageID:      payload.LanguageID,
+			CompletionText:  fullText,
 			TokensGenerated: tokenCount,
 		})
 		if err != nil {

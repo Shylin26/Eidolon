@@ -9,6 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/eidolon/eidolon/internal/training"
+
 	eidolongrpc "github.com/eidolon/eidolon/internal/api/grpc"
 	"github.com/eidolon/eidolon/internal/api/rest"
 	"github.com/eidolon/eidolon/internal/config"
@@ -72,6 +74,10 @@ func main() {
 			logger.Info("REST server stopped", zap.Error(err))
 		}
 	}()
+
+	homedir, _ := os.UserHomeDir()
+	retrainWorker := training.NewWorker(homedir+"/eidolon/data/eidolon.db", logger)
+	go retrainWorker.Run(ctx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

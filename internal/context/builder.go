@@ -33,7 +33,7 @@ type ContextPayload struct {
 const (
 	maxPrefixChars = 3000
 	maxSuffixChars = 500
-	maxTokens      = 256
+	maxTokens      = 64
 )
 
 type Builder struct {
