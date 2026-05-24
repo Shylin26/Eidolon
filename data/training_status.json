@@ -1,1 +1,1 @@
-{"status": "failed", "message": "dataset export failed \u2014 not enough accepted completions", "timestamp": 1779663747.574423, "adapter_path": null}
+{"status": "failed", "message": "mlx_lm.lora training failed", "timestamp": 1779666461.826741, "adapter_path": null}

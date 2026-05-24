@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/eidolon/eidolon/internal/storage/sqlite"
 	"go.uber.org/zap"
 
@@ -47,6 +48,7 @@ func NewServer(producer *kafka.Producer, logger *zap.Logger, port int) *Server {
 func (s *Server) routes() {
 	s.router.Use(s.corsMiddleware)
 	s.router.Use(s.loggingMiddleware)
+	s.router.Handle("/metrics", promhttp.Handler())
 	s.router.HandleFunc("/api/health", s.handleHealth).Methods("GET")
 	s.router.HandleFunc("/api/status", s.handleStatus).Methods("GET")
 	s.router.HandleFunc("/api/completions/stream", s.handleCompletionStream).Methods("GET")

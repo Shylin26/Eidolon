@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/eidolon/eidolon/internal/embedding"
+	"github.com/eidolon/eidolon/internal/metrics"
 	"github.com/eidolon/eidolon/internal/storage/sqlite"
 	"github.com/eidolon/eidolon/internal/inference"
 	"github.com/eidolon/eidolon/internal/kafka"
@@ -82,6 +83,8 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 		return fmt.Errorf("unmarshal context payload: %w", err)
 	}
 
+	metrics.ActiveInferenceRequests.Inc()
+	inferenceStart := time.Now()
 	g.logger.Info("inference request received",
 		zap.String("request_id", payload.RequestID),
 		zap.String("language", payload.LanguageID),
@@ -136,6 +139,10 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 		}
 	}
 
+	metrics.ActiveInferenceRequests.Dec()
+	metrics.InferenceLatency.Observe(time.Since(inferenceStart).Seconds())
+	metrics.CompletionTokens.Observe(float64(tokenCount))
+	metrics.CompletionsTotal.WithLabelValues(payload.LanguageID, "success").Inc()
 	g.logger.Info("inference complete",
 		zap.String("request_id", payload.RequestID),
 		zap.Int("tokens", tokenCount),
@@ -196,6 +203,7 @@ func (g *Gateway) enrichWithRAG(prefix, lang string) string {
 	sb.WriteString(prefix)
 
 	g.logger.Info("RAG context injected", zap.Int("chunks", len(chunks)))
+	metrics.RAGChunksInjected.Observe(float64(len(chunks)))
 	return sb.String()
 }
 
