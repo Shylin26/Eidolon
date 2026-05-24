@@ -111,8 +111,8 @@ Accept/reject signals flow into `eidolon.feedback`. When 5,000 new signals accum
 | Language model | CodeLlama-7B-Instruct (4-bit, MLX) |
 | ML framework | Apple MLX — runs on M4 Neural Engine |
 | Fine-tuning | LoRA via mlx-lm (rank=16, ~50MB adapters) |
-| Event streaming | Apache Kafka 3.7 (KRaft, no ZooKeeper) |
-| Backend | Go 1.26 — context builder, inference gateway, REST API |
+| Event streaming | Apache Kafka 3.7 (KRaft, single-broker — local dev) |
+| Backend | Go 1.22+ — context builder, inference gateway, REST API |
 | IPC | Unix domain socket (Go to Python) |
 | Frontend | React 18 · Vite · TailwindCSS · Recharts |
 | Editor | VSCode/Cursor extension (TypeScript) |

@@ -3,6 +3,7 @@ package context
 import (
 	"testing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSplitAtCursor(t *testing.T) {
@@ -14,29 +15,23 @@ func TestSplitAtCursor(t *testing.T) {
 	assert.NotEmpty(t, prefix)
 	assert.NotEmpty(t, suffix)
 	assert.Equal(t, content, prefix+suffix)
-	t.Logf("prefix: %q", prefix)
-	t.Logf("suffix: %q", suffix)
 }
 
 func TestSplitAtCursorEdgeCases(t *testing.T) {
-	// cursor at start
 	p, s := splitAtCursor("hello world", 0)
 	assert.Equal(t, "", p)
 	assert.Equal(t, "hello world", s)
 
-	// cursor at end
 	p, s = splitAtCursor("hello world", 11)
 	assert.Equal(t, "hello world", p)
 	assert.Equal(t, "", s)
 
-	// cursor beyond end
 	p, s = splitAtCursor("hi", 100)
 	assert.Equal(t, "hi", p)
 	assert.Equal(t, "", s)
 }
 
 func TestPrefixTrimming(t *testing.T) {
-	// generate a very long prefix
 	long := make([]byte, 5000)
 	for i := range long {
 		long[i] = 'x'
@@ -45,10 +40,21 @@ func TestPrefixTrimming(t *testing.T) {
 	offset := len(long)
 
 	prefix, _ := splitAtCursor(content, offset)
-
-	// trim manually as builder does
 	if len(prefix) > maxPrefixChars {
 		prefix = prefix[len(prefix)-maxPrefixChars:]
 	}
 	assert.LessOrEqual(t, len(prefix), maxPrefixChars)
+}
+
+func TestSplitUnicode(t *testing.T) {
+	content := "func 你好(n int) int {\n\treturn"
+	offset := 10
+	prefix, suffix := splitAtCursor(content, offset)
+	require.Equal(t, content, prefix+suffix)
+}
+
+func TestEmptyContent(t *testing.T) {
+	prefix, suffix := splitAtCursor("", 0)
+	assert.Equal(t, "", prefix)
+	assert.Equal(t, "", suffix)
 }
