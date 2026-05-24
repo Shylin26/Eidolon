@@ -117,6 +117,7 @@ Accept/reject signals flow into `eidolon.feedback`. When 5,000 new signals accum
 | Frontend | React 18 · Vite · TailwindCSS · Recharts |
 | Editor | VSCode/Cursor extension (TypeScript) |
 | Storage | SQLite (events) · pgvector (embeddings) |
+| Metrics | Prometheus (`/metrics` endpoint) |
 | Context parsing | Tree-sitter (Go, Python, TypeScript) |
 
 ---
@@ -229,6 +230,7 @@ eidolon/
 ├── ml/                  # Python MLX inference server
 ├── web/                 # React dashboard
 ├── extension/           # VSCode/Cursor extension
+├── neovim/              # Neovim plugin (Lua, lazy.nvim compatible)
 └── docker/              # Kafka KRaft compose
 ```
 
@@ -236,7 +238,7 @@ eidolon/
 
 ## Roadmap
 
-- [ ] Neovim plugin (LSP server mode)
+- [x] Neovim plugin — `neovim/` directory, lazy.nvim support, ghost text, `:checkhealth eidolon`
 - [ ] Automated nightly LoRA retraining on accumulated feedback
 - [ ] Team mode — shared LAN inference server with per-user adapters
 - [ ] pgvector RAG — inject semantically similar code chunks into prompt
