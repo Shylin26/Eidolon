@@ -43,8 +43,27 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Run unit tests
-        run: go test ./internal/context/... ./internal/kafka/... -v -timeout 30s
-
       - name: Run vet
         run: go vet ./...
+
+      - name: Run unit tests (no Kafka)
+        run: go test ./internal/context/... -v -timeout 30s
+
+      - name: Wait for Kafka
+        run: |
+          echo "Waiting for Kafka..."
+          for i in $(seq 1 30); do
+            if docker run --rm --network host confluentinc/cp-kafka:7.6.0 kafka-topics --bootstrap-server localhost:9092 --list > /dev/null 2>&1; then
+              echo "Kafka is ready"
+              break
+            fi
+            echo "Attempt $i/30..."
+            sleep 3
+          done
+
+      - name: Create Kafka topics
+        run: |
+          docker run --rm --network host confluentinc/cp-kafka:7.6.0             kafka-topics --bootstrap-server localhost:9092 --create             --topic eidolon.metrics --partitions 1 --replication-factor 1
+
+      - name: Run Kafka integration tests
+        run: go test ./internal/kafka/... -v -timeout 60s
