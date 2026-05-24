@@ -23,15 +23,19 @@ export default function App() {
 
   useEffect(() => {
     const es = new EventSource("/api/completions/stream")
-    let current = null
+    const pending = {}
 
     es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data)
+        if (!e || !e.data) return
+        let data
+        try { data = JSON.parse(e.data) } catch { return }
+        if (!data || !data.request_id) return
 
-        if (!current || current.request_id !== data.request_id) {
-          current = {
-            request_id: data.request_id,
+        const id = data.request_id
+        if (!pending[id]) {
+          pending[id] = {
+            request_id: id,
             file: data.file_path || "unknown",
             text: "",
             ts: Date.now(),
@@ -42,23 +46,23 @@ export default function App() {
           }
         }
 
-        if (current.firstTokenMs === null && data.token) {
-          current.firstTokenMs = Date.now() - current.startTs
+        const cur = pending[id]
+        if (cur.firstTokenMs === null && data.token) {
+          cur.firstTokenMs = Date.now() - cur.startTs
         }
+        cur.text += (data.token || '')
+        cur.tokenCount += 1
 
-        current.text += data.token
-        current.tokenCount += 1
-
-        // update streaming display
-        setStreamingTokens(prev => ({ ...prev, [current.request_id]: current.text }))
+        setStreamingTokens(prev => ({ ...prev, [id]: cur.text }))
 
         if (data.done) {
-          current.done = true
-          const c = { ...current }
+          cur.done = true
+          const c = { ...cur }
+          delete pending[id]
           setCompletions(prev => [c, ...prev].slice(0, 50))
           setStreamingTokens(prev => {
             const next = { ...prev }
-            delete next[c.request_id]
+            delete next[id]
             return next
           })
           setMetrics(prev => [...prev, {
@@ -66,10 +70,10 @@ export default function App() {
             tokens: c.tokenCount,
             latency: c.firstTokenMs || 0,
           }].slice(-30))
-          current = null
         }
       } catch {}
     }
+    es.onerror = () => {}
     return () => es.close()
   }, [])
 
@@ -93,7 +97,7 @@ export default function App() {
   }
 
   const acceptRate = completions.length > 0
-    ? Math.round((completions.filter(c => c.done).length / completions.length) * 100)
+    ? Math.round((completions.filter(c => c.done).length / completions.length) * 100) || 0
     : 0
 
   const avgLatency = metrics.length > 0

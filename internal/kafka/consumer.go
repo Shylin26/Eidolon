@@ -23,7 +23,7 @@ func NewConsumer(bootstrapServers, groupID string, topics []string, logger *zap.
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":       bootstrapServers,
 		"group.id":                groupID,
-		"auto.offset.reset":       "earliest",
+		"auto.offset.reset":       "latest",
 		"enable.auto.commit":      true,
 		"broker.address.family":   "v4",
 	})
