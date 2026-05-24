@@ -139,8 +139,8 @@ eidolon.metrics           Latency and throughput telemetry. 3-day retention.
 
 | Metric | Value |
 |---|---|
-| First token latency | < 100ms (P95) |
-| Throughput | ~40 tokens/sec on M4 |
+| First token latency | 3-8s (M4, 4-bit, no GPU warmup) |
+| Throughput | ~9 tokens/sec on M4 (4-bit quantised) |
 | Model memory | 4.3 GB (4-bit quantised) |
 | Fine-tuning time | 2–4 hours on M4 (100k examples) |
 | Adapter size | ~50 MB |
