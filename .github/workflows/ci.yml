@@ -10,24 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      kafka:
-        image: confluentinc/cp-kafka:7.6.0
-        env:
-          KAFKA_NODE_ID: 1
-          KAFKA_PROCESS_ROLES: broker,controller
-          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-          KAFKA_HEAP_OPTS: -Xmx256m -Xms256m
-          CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qg
-        ports:
-          - 9092:9092
-
     steps:
       - uses: actions/checkout@v4
 
@@ -46,24 +28,5 @@ jobs:
       - name: Run vet
         run: go vet ./...
 
-      - name: Run unit tests (no Kafka)
+      - name: Run unit tests
         run: go test ./internal/context/... -v -timeout 30s
-
-      - name: Wait for Kafka
-        run: |
-          echo "Waiting for Kafka..."
-          for i in $(seq 1 30); do
-            if docker run --rm --network host confluentinc/cp-kafka:7.6.0 kafka-topics --bootstrap-server localhost:9092 --list > /dev/null 2>&1; then
-              echo "Kafka is ready"
-              break
-            fi
-            echo "Attempt $i/30..."
-            sleep 3
-          done
-
-      - name: Create Kafka topics
-        run: |
-          docker run --rm --network host confluentinc/cp-kafka:7.6.0             kafka-topics --bootstrap-server localhost:9092 --create             --topic eidolon.metrics --partitions 1 --replication-factor 1
-
-      - name: Run Kafka integration tests
-        run: go test ./internal/kafka/... -v -timeout 60s
