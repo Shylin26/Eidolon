@@ -8,7 +8,7 @@
 
 ---
 
-*A fully local, privacy-first code completion engine that runs entirely on your machine.*
+*A fully local, privacy-first code completion engine that runs entirely on your machine.*  
 *Every keystroke stays on your device. Every token is yours.*
 
 </div>
@@ -28,78 +28,78 @@ Zero bytes leave your machine. No subscriptions. No telemetry. No cloud dependen
 ## The Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        YOUR EDITOR                              │
-│              VSCode / Cursor Extension (TypeScript)             │
-│         Inline ghost text · Tab to accept · Status bar          │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │  keystroke event
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      APACHE KAFKA                               │
-│                    Single-broker KRaft                          │
-│                                                                 │
-│  eidolon.keystrokes  →  eidolon.context.requests                │
-│  eidolon.infer.requests  →  eidolon.completions                 │
-│  eidolon.feedback  ·  eidolon.embeddings  ·  eidolon.metrics    │
-└──────┬──────────────────────────────────────────┬───────────────┘
-       │                                          │
-       ▼                                          ▼
-┌──────────────────┐                  ┌───────────────────────────┐
-│  Context Builder │                  │    Inference Gateway      │
-│  (Go service)    │                  │    (Go service)           │
-│                  │                  │                           │
-│  · Tree-sitter   │                  │  · Rate limiting          │
-│    AST parsing   │                  │  · Token budget check     │
-│  · FIM context   │                  │  · Unix socket IPC        │
-│  · 300ms debounce│                  │  · Stream to Kafka        │
-└──────────────────┘                  └───────────┬───────────────┘
-                                                  │
-                                                  ▼
-                                      ┌───────────────────────────┐
-                                      │   MLX Inference Server    │
-                                      │   (Python · Unix socket)  │
-                                      │                           │
-                                      │  · CodeLlama-7B 4-bit     │
-                                      │  · Apple Neural Engine    │
-                                      │  · LoRA adapter support   │
-                                      │  · ~40 tok/s on M4        │
-                                      └───────────────────────────┘
-                                                  │
-                            ┌─────────────────────┘
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     REACT DASHBOARD                             │
-│              Vite · TailwindCSS · Recharts · SSE                │
-│                                                                 │
-│  Live completion feed  ·  Model config  ·  Kafka inspector      │
-│  Training metrics  ·  Repo index status  ·  Real-time charts    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         YOUR EDITOR                              │
+│               VSCode / Cursor Extension (TypeScript)             │
+│          Inline ghost text  ·  Tab to accept  ·  Status bar      │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │  keystroke event
+                               ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                        APACHE KAFKA                              │
+│                      Single-broker KRaft                         │
+│                                                                  │
+│   eidolon.keystrokes   ──▶   eidolon.context.requests            │
+│   eidolon.infer.requests ──▶ eidolon.completions                 │
+│   eidolon.feedback  ·  eidolon.embeddings  ·  eidolon.metrics    │
+└──────────┬───────────────────────────────────────┬───────────────┘
+           │                                       │
+           ▼                                       ▼
+┌──────────────────────┐               ┌───────────────────────────┐
+│   Context Builder    │               │    Inference Gateway      │
+│     (Go service)     │               │      (Go service)         │
+│                      │               │                           │
+│  · Tree-sitter AST   │               │  · Rate limiting          │
+│  · FIM context build │               │  · Token budget check     │
+│  · 300ms debounce    │               │  · Unix socket IPC        │
+│  · Publish to Kafka  │               │  · Stream tokens to Kafka │
+└──────────────────────┘               └──────────────┬────────────┘
+                                                      │
+                                                      ▼
+                                       ┌──────────────────────────┐
+                                       │   MLX Inference Server   │
+                                       │  (Python · Unix socket)  │
+                                       │                          │
+                                       │  · CodeLlama-7B 4-bit    │
+                                       │  · Apple Neural Engine   │
+                                       │  · LoRA adapter support  │
+                                       │  · ~40 tok/s on M4       │
+                                       └──────────────┬───────────┘
+                                                      │
+                              ┌───────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                       REACT DASHBOARD                            │
+│               Vite  ·  TailwindCSS  ·  Recharts  ·  SSE         │
+│                                                                  │
+│   Live completion feed  ·  Model config  ·  Kafka inspector      │
+│   Training metrics  ·  Repo index status  ·  Real-time charts    │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## How It Works — End to End
 
-**1. You type in your editor.**
+**1. You type in your editor.**  
 The Cursor/VSCode extension captures keystrokes with a 300ms debounce and sends a `KeystrokeEvent` to the Go backend via HTTP.
 
-**2. The Go server publishes to Kafka.**
+**2. The Go server publishes to Kafka.**  
 The event lands on `eidolon.keystrokes`. This decouples the editor from everything downstream — if the model is busy, events queue up and replay automatically.
 
-**3. The Context Builder consumes the event.**
+**3. The Context Builder consumes the event.**  
 A Go goroutine parses the file using Tree-sitter, extracts the enclosing function, imports, and type signatures, then builds a Fill-in-the-Middle (FIM) prompt. It publishes an enriched `ContextPayload` to `eidolon.context.requests`.
 
-**4. The Inference Gateway routes to the model.**
+**4. The Inference Gateway routes to the model.**  
 Another Go goroutine consumes the context payload, validates the token budget, applies rate limiting, and calls the Python MLX inference server over a Unix domain socket.
 
-**5. CodeLlama generates tokens.**
+**5. CodeLlama generates tokens.**  
 The MLX inference server runs CodeLlama-7B at 4-bit quantisation on Apple's Neural Engine. Tokens stream back as newline-delimited JSON. Each token is published to `eidolon.completions` on Kafka.
 
-**6. The completion appears in your editor.**
+**6. The completion appears in your editor.**  
 The extension polls the SSE stream, assembles the token stream, and renders the completion as inline ghost text. Tab to accept. Escape to reject.
 
-**7. Your feedback trains the next version.**
+**7. Your feedback trains the next version.**  
 Accept/reject signals flow into `eidolon.feedback`. When 5,000 new signals accumulate, the system automatically triggers a LoRA fine-tuning run on your codebase and hot-swaps the new adapter — no restart required.
 
 ---
@@ -113,7 +113,7 @@ Accept/reject signals flow into `eidolon.feedback`. When 5,000 new signals accum
 | Fine-tuning | LoRA via mlx-lm (rank=16, ~50MB adapters) |
 | Event streaming | Apache Kafka 3.7 (KRaft, no ZooKeeper) |
 | Backend | Go 1.26 — context builder, inference gateway, REST API |
-| IPC | Unix domain socket (Go ↔ Python) |
+| IPC | Unix domain socket (Go to Python) |
 | Frontend | React 18 · Vite · TailwindCSS · Recharts |
 | Editor | VSCode/Cursor extension (TypeScript) |
 | Storage | SQLite (events) · pgvector (embeddings) |
@@ -162,17 +162,9 @@ eidolon.metrics           Latency and throughput telemetry. 3-day retention.
 ```bash
 git clone https://github.com/Shylin26/Eidolon.git
 cd Eidolon
-
-# Go dependencies
 go mod tidy
-
-# Python ML stack
 pip3 install mlx mlx-lm transformers fastapi uvicorn confluent-kafka
-
-# React dashboard
 cd web && npm install
-
-# VSCode extension
 cd ../extension/eidolon && npm install
 ```
 
@@ -181,53 +173,38 @@ cd ../extension/eidolon && npm install
 ```bash
 colima start --cpu 4 --memory 8
 docker compose -f docker/kafka-kraft.yml up -d
-
-# Create topics
-docker exec eidolon-kafka kafka-topics --bootstrap-server localhost:9092   --create --topic eidolon.keystrokes --partitions 1 --replication-factor 1
-# (repeat for all 7 topics — see docs)
 ```
 
-### 3. Download and prepare the model
+### 3. Download the model
 
 ```bash
-# Download CodeLlama-7B (pre-quantised MLX format)
-hf download mlx-community/CodeLlama-7b-Instruct-hf-4bit-mlx   --local-dir ~/eidolon/models/eidolon-base
+hf download mlx-community/CodeLlama-7b-Instruct-hf-4bit-mlx \
+  --local-dir ~/eidolon/models/eidolon-base
 
 # Verify M4 GPU
 python3 -c "import mlx.core as mx; print(mx.default_device())"
 # Expected: Device(gpu, 0)
 ```
 
-### 4. Start the inference server
+### 4. Start everything
 
 ```bash
+# Terminal 1 — ML inference server
 python3 ml/inference_server.py
-# [eidolon] model ready
-# [eidolon] listening on /tmp/eidolon.sock
-```
 
-### 5. Start the Go backend
-
-```bash
+# Terminal 2 — Go backend
 go run cmd/server/main.go
-# context builder started
-# inference gateway started
-# REST API starting on :8080
-```
 
-### 6. Start the dashboard
-
-```bash
+# Terminal 3 — React dashboard
 cd web && npm run dev
-# http://localhost:3000
 ```
 
-### 7. Install the editor extension
+### 5. Install the editor extension
 
 ```bash
 cd extension/eidolon
 npx vsce package --no-dependencies --allow-star-activation
-# In Cursor/VSCode: Cmd+Shift+P → Install from VSIX
+# Cursor/VSCode: Cmd+Shift+P → Install from VSIX
 ```
 
 ---
@@ -237,25 +214,22 @@ npx vsce package --no-dependencies --allow-star-activation
 ```
 eidolon/
 ├── cmd/
-│   ├── server/          # Main binary — all services
+│   ├── server/          # Main binary — all services wired together
 │   ├── indexer/         # Repo indexer CLI
 │   ├── trainer/         # LoRA training trigger CLI
 │   └── dataset-builder/ # FIM dataset extractor
 ├── internal/
-│   ├── kafka/           # Producer & consumer wrappers
+│   ├── kafka/           # Producer and consumer wrappers
 │   ├── context/         # Tree-sitter context builder
 │   ├── inference/       # Unix socket client
 │   ├── api/
 │   │   ├── grpc/        # Inference gateway
 │   │   └── rest/        # HTTP + SSE server
-│   ├── storage/         # SQLite + pgvector
-│   ├── metrics/         # Prometheus exporter
 │   └── config/          # Viper config
 ├── ml/                  # Python MLX inference server
 ├── web/                 # React dashboard
 ├── extension/           # VSCode/Cursor extension
-├── docker/              # Kafka KRaft compose
-└── proto/               # Protobuf definitions
+└── docker/              # Kafka KRaft compose
 ```
 
 ---
