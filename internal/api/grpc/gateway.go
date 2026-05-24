@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/eidolon/eidolon/internal/embedding"
 	"github.com/eidolon/eidolon/internal/inference"
 	"github.com/eidolon/eidolon/internal/kafka"
+	"github.com/eidolon/eidolon/internal/storage/vector"
 )
 
-// ContextPayload mirrors what the context builder publishes
 type ContextPayload struct {
 	RequestID  string `json:"request_id"`
 	FilePath   string `json:"file_path"`
@@ -23,7 +25,6 @@ type ContextPayload struct {
 	Timestamp  int64  `json:"timestamp"`
 }
 
-// CompletionEvent is what we publish to eidolon.completions
 type CompletionEvent struct {
 	RequestID string `json:"request_id"`
 	FilePath  string `json:"file_path"`
@@ -34,20 +35,32 @@ type CompletionEvent struct {
 }
 
 type Gateway struct {
-	inferClient *inference.Client
-	producer    *kafka.Producer
-	logger      *zap.Logger
+	inferClient  *inference.Client
+	embedClient  *embedding.Client
+	vectorStore  *vector.Store
+	producer     *kafka.Producer
+	logger       *zap.Logger
 }
 
 func NewGateway(inferClient *inference.Client, producer *kafka.Producer, logger *zap.Logger) *Gateway {
+	embedClient := embedding.NewClient()
+
+	ctx := context.Background()
+	store, err := vector.NewStore(ctx)
+	if err != nil {
+		logger.Warn("pgvector unavailable — RAG disabled", zap.Error(err))
+		store = nil
+	}
+
 	return &Gateway{
 		inferClient: inferClient,
+		embedClient: embedClient,
+		vectorStore: store,
 		producer:    producer,
 		logger:      logger,
 	}
 }
 
-// Handle consumes from eidolon.context.requests
 func (g *Gateway) Handle(msg kafka.Message) error {
 	var payload ContextPayload
 	if err := json.Unmarshal([]byte(msg.Value), &payload); err != nil {
@@ -60,12 +73,15 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 		zap.Int("prefix_len", len(payload.Prefix)),
 	)
 
+	// G: inject similar code chunks into the prefix
+	prefix := g.enrichWithRAG(payload.Prefix, payload.LanguageID)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	tokens, err := g.inferClient.Complete(ctx, inference.Request{
 		RequestID:   payload.RequestID,
-		Prefix:      payload.Prefix,
+		Prefix:      prefix,
 		Suffix:      payload.Suffix,
 		MaxTokens:   payload.MaxTokens,
 		Temperature: 0.2,
@@ -89,7 +105,6 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 			event.Error = tok.Error
 			event.Done = true
 		}
-
 		data, _ := json.Marshal(event)
 		if err := g.producer.Publish("eidolon.completions", payload.RequestID, data); err != nil {
 			g.logger.Error("failed to publish token", zap.Error(err))
@@ -105,6 +120,43 @@ func (g *Gateway) Handle(msg kafka.Message) error {
 		zap.Int("tokens", tokenCount),
 	)
 	return nil
+}
+
+func (g *Gateway) enrichWithRAG(prefix, lang string) string {
+	if g.vectorStore == nil || g.embedClient == nil {
+		return prefix
+	}
+
+	vec, err := g.embedClient.EmbedOne(prefix)
+	if err != nil {
+		g.logger.Warn("embed failed for RAG", zap.Error(err))
+		return prefix
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	chunks, err := g.vectorStore.Search(ctx, vec, 3)
+	if err != nil || len(chunks) == 0 {
+		return prefix
+	}
+
+	var sb strings.Builder
+	sb.WriteString("// Similar code from your codebase:\n")
+	for _, c := range chunks {
+		sb.WriteString(fmt.Sprintf("// --- %s ---\n", c.FilePath))
+		lines := strings.Split(c.Content, "\n")
+		for _, l := range lines {
+			if strings.TrimSpace(l) != "" {
+				sb.WriteString(fmt.Sprintf("// %s\n", l))
+			}
+		}
+	}
+	sb.WriteString("\n")
+	sb.WriteString(prefix)
+
+	g.logger.Info("RAG context injected", zap.Int("chunks", len(chunks)))
+	return sb.String()
 }
 
 func (g *Gateway) publishError(payload ContextPayload, err error) {
